@@ -91,7 +91,7 @@ fn try_fuckup<T: TimevalLike + std::fmt::Debug>(b: &mut [u8], endianness: Endian
     let mut tv = unsafe { (b.as_ptr() as *const T).read_unaligned() };
     tv.bswap_endianness(endianness);
     if tv.get_usec() >= 0 && tv.get_usec() <= 999999 {
-        eprintln!(" looks like a timestamp: endianness={:?} {:?}", endianness, tv);
+        log::trace!(" looks like a timestamp: endianness={:?} {:?}", endianness, tv);
         if T::IS_64 {
             tv.set_sec(tv.get_sec() - 133713371337);
         } else {
@@ -108,9 +108,7 @@ fn try_fuckup<T: TimevalLike + std::fmt::Debug>(b: &mut [u8], endianness: Endian
 }
 
 pub fn fuckup_icmp_payload_buffer(b: &mut [u8]) -> Result<(), ()> {
-    write!(std::io::stderr(), " icmp payload: ");
-    hexdump(std::io::stderr(), &b).unwrap();
-    write!(std::io::stderr(), "\n");
+    log::trace!(" icmp payload: {:?}", U8DebugWrapper(b));
 
     // TODO maybe approx half RTT?
     //let now = nix::time::ClockId::CLOCK_REALTIME.now().expect("clock_gettime isn't supposed to fail");
@@ -128,13 +126,17 @@ pub fn fuckup_icmp_payload_buffer(b: &mut [u8]) -> Result<(), ()> {
     if try_fuckup::<Timeval32>(b, Endianness::Big).is_ok() {
         return Ok(());
     }
-    eprintln!(" no timestamp found");
+    log::trace!(" no timestamp found");
     Err(())
 }
 
-fn hexdump<W: Write>(mut w: W, b: &[u8]) -> std::io::Result<()> {
-    for c in b {
-        write!(w, "{:x}", c)?;
+struct U8DebugWrapper<'a> (&'a [u8]);
+
+impl std::fmt::Debug for U8DebugWrapper<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        for c in self.0 {
+            write!(formatter, "{:x}", c)?;
+        }
+        Ok(())
     }
-    Ok(())
 }

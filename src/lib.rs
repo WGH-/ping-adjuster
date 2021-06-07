@@ -1,4 +1,4 @@
-use std::io::Write;
+pub mod letters;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -84,16 +84,66 @@ pub enum FuckupError {
     NotATimeval,
 }
 
-fn try_fuckup<T: TimevalLike + std::fmt::Debug>(b: &mut [u8], endianness: Endianness) -> Result<(), FuckupError> {
+pub trait LatencyCalculator {
+    fn latency_delta(&mut self, seq: u16) -> i64;
+}
+
+pub struct ConstantLatencyCalculator(i64);
+
+impl ConstantLatencyCalculator {
+    pub fn new(x: i64) -> Self {
+        Self(x)
+    }
+}
+
+impl LatencyCalculator for ConstantLatencyCalculator {
+    fn latency_delta(&mut self, _seq: u16) -> i64 {
+        self.0
+    }
+}
+
+pub struct PseudoBannerLatencyCalculator {
+    deltas: Vec<i64>,
+}
+
+impl PseudoBannerLatencyCalculator {
+    pub fn new(msg: &str) -> Result<Self, letters::UnknownLetter> {
+        Ok(Self {
+            deltas: letters::get_word(msg)?,
+        })
+    }
+}
+
+impl LatencyCalculator for PseudoBannerLatencyCalculator {
+    fn latency_delta(&mut self, seq: u16) -> i64 {
+        let i = seq as usize - 1;
+        self.deltas[i % self.deltas.len()]
+    }
+}
+
+fn try_fuckup<T, F>(
+    b: &mut [u8],
+    endianness: Endianness,
+    seq: u16,
+    f: &mut F,
+) -> Result<(), FuckupError>
+where
+    T: TimevalLike + std::fmt::Debug,
+    F: LatencyCalculator + ?Sized,
+{
     if b.len() <= std::mem::size_of::<T>() {
         return Err(FuckupError::TooShort);
     }
     let mut tv = unsafe { (b.as_ptr() as *const T).read_unaligned() };
     tv.bswap_endianness(endianness);
     if tv.get_usec() >= 0 && tv.get_usec() <= 999999 {
-        log::trace!(" looks like a timestamp: endianness={:?} {:?}", endianness, tv);
+        log::trace!(
+            " looks like a timestamp: endianness={:?} {:?}",
+            endianness,
+            tv
+        );
         if T::IS_64 {
-            tv.set_sec(tv.get_sec() - 133713371337);
+            tv.set_sec(tv.get_sec() - f.latency_delta(seq));
         } else {
             tv.set_sec(tv.get_sec() - 1337);
         }
@@ -107,30 +157,33 @@ fn try_fuckup<T: TimevalLike + std::fmt::Debug>(b: &mut [u8], endianness: Endian
     };
 }
 
-pub fn fuckup_icmp_payload_buffer(b: &mut [u8]) -> Result<(), ()> {
+pub fn fuckup_icmp_payload_buffer<F>(b: &mut [u8], seq: u16, f: &mut F) -> Result<(), ()>
+where
+    F: LatencyCalculator + ?Sized,
+{
     log::trace!(" icmp payload: {:?}", U8DebugWrapper(b));
 
     // TODO maybe approx half RTT?
     //let now = nix::time::ClockId::CLOCK_REALTIME.now().expect("clock_gettime isn't supposed to fail");
 
-    if try_fuckup::<Timeval64>(b, Endianness::Little).is_ok() {
+    if try_fuckup::<Timeval64, _>(b, Endianness::Little, seq, f).is_ok() {
         return Ok(());
     }
     // NOTE big endian 64 bit has false positives for 32 bit little endian, breaking it
     //if try_fuckup::<Timeval64>(b, Endianness::Big).is_ok() {
     //    return Ok(())
     //}
-    if try_fuckup::<Timeval32>(b, Endianness::Little).is_ok() {
+    if try_fuckup::<Timeval32, _>(b, Endianness::Little, seq, f).is_ok() {
         return Ok(());
     }
-    if try_fuckup::<Timeval32>(b, Endianness::Big).is_ok() {
+    if try_fuckup::<Timeval32, _>(b, Endianness::Big, seq, f).is_ok() {
         return Ok(());
     }
     log::trace!(" no timestamp found");
     Err(())
 }
 
-struct U8DebugWrapper<'a> (&'a [u8]);
+struct U8DebugWrapper<'a>(&'a [u8]);
 
 impl std::fmt::Debug for U8DebugWrapper<'_> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

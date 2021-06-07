@@ -12,11 +12,17 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::MutablePacket;
 
-use ping_fuckuper::fuckup_icmp_payload_buffer;
+use ping_fuckuper::{
+    fuckup_icmp_payload_buffer, ConstantLatencyCalculator, LatencyCalculator,
+    PseudoBannerLatencyCalculator,
+};
 
 const DEFAULT_QUEUE_NUM: u16 = 5256;
 
-fn handle_ipv4(ipv4: &mut MutableIpv4Packet) -> Result<(), ()> {
+fn handle_ipv4<T: LatencyCalculator + ?Sized>(
+    ipv4: &mut MutableIpv4Packet,
+    f: &mut T,
+) -> Result<(), ()> {
     if ipv4.get_next_level_protocol() != IpNextHeaderProtocols::Icmp {
         return Err(());
     }
@@ -33,7 +39,9 @@ fn handle_ipv4(ipv4: &mut MutableIpv4Packet) -> Result<(), ()> {
         _ => return Err(()),
     };
     log::trace!("{} -> {:?}", destination, icmp_echo_reply_packet);
-    match fuckup_icmp_payload_buffer(icmp_echo_reply_packet.payload_mut()) {
+    let seq = icmp_echo_reply_packet.get_sequence_number();
+    icmp_echo_reply_packet.set_sequence_number(1);
+    match fuckup_icmp_payload_buffer(icmp_echo_reply_packet.payload_mut(), seq, f) {
         Ok(_) => {
             use pnet::packet::icmp::checksum;
             let mut icmp_packet =
@@ -45,7 +53,10 @@ fn handle_ipv4(ipv4: &mut MutableIpv4Packet) -> Result<(), ()> {
     }
 }
 
-fn handle_ipv6(ipv6: &mut MutableIpv6Packet) -> Result<(), ()> {
+fn handle_ipv6<T: LatencyCalculator + ?Sized>(
+    ipv6: &mut MutableIpv6Packet,
+    f: &mut T,
+) -> Result<(), ()> {
     if ipv6.get_next_header() != IpNextHeaderProtocols::Icmpv6 {
         return Err(());
     }
@@ -63,7 +74,9 @@ fn handle_ipv6(ipv6: &mut MutableIpv6Packet) -> Result<(), ()> {
         None => return Err(()),
     };
     log::trace!("{} -> {:?}", destination, icmp_echo_reply_packet);
-    match fuckup_icmp_payload_buffer(icmp_echo_reply_packet.payload_mut()) {
+    let seq = icmp_echo_reply_packet.get_sequence_number();
+    icmp_echo_reply_packet.set_sequence_number(1);
+    match fuckup_icmp_payload_buffer(icmp_echo_reply_packet.payload_mut(), seq, f) {
         Ok(_) => {
             use pnet::packet::icmpv6::checksum;
             let mut icmp_packet =
@@ -80,15 +93,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let matches = clap_app!(ping_fuckuper =>
         (@arg queue_num: --queue-num +takes_value)
-    ).get_matches();
+        (@arg message: --message +takes_value)
+    )
+    .get_matches();
 
     let queue_num = match matches.value_of("queue_num") {
-        Some(val) => {
-            u16::from_str(val)?
-        },
-        None => {
-            DEFAULT_QUEUE_NUM
-        },
+        Some(val) => u16::from_str(val)?,
+        None => DEFAULT_QUEUE_NUM,
+    };
+    let message = matches.value_of("message");
+
+    let mut latency_calculator: Box<dyn LatencyCalculator> = match message {
+        None => Box::new(ConstantLatencyCalculator::new(133713371337)),
+        Some(message) => Box::new(PseudoBannerLatencyCalculator::new(message)?),
     };
 
     let mut queue = nfq::Queue::open()?;
@@ -100,12 +117,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match EtherType::new(msg.get_hw_protocol()) {
             EtherTypes::Ipv4 => {
                 if let Some(mut packet) = MutableIpv4Packet::new(msg.get_payload_mut()) {
-                    let _ = handle_ipv4(&mut packet);
+                    let _ = handle_ipv4(&mut packet, &mut *latency_calculator);
                 }
             }
             EtherTypes::Ipv6 => {
                 if let Some(mut packet) = MutableIpv6Packet::new(msg.get_payload_mut()) {
-                    let _ = handle_ipv6(&mut packet);
+                    let _ = handle_ipv6(&mut packet, &mut *latency_calculator);
                 }
             }
             _ => (),

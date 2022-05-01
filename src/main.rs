@@ -1,8 +1,3 @@
-#[macro_use]
-extern crate clap;
-
-use std::str::FromStr;
-
 use pnet::packet::ethernet::{EtherType, EtherTypes};
 use pnet::packet::icmp::echo_reply::MutableEchoReplyPacket;
 use pnet::packet::icmp::{IcmpTypes, MutableIcmpPacket};
@@ -11,6 +6,8 @@ use pnet::packet::ip::IpNextHeaderProtocols;
 use pnet::packet::ipv4::MutableIpv4Packet;
 use pnet::packet::ipv6::MutableIpv6Packet;
 use pnet::packet::MutablePacket;
+
+use clap::Parser;
 
 use ping_fuckuper::{
     fuckup_icmp_payload_buffer, ConstantLatencyCalculator, LatencyCalculator,
@@ -88,29 +85,28 @@ fn handle_ipv6<T: LatencyCalculator + ?Sized>(
     }
 }
 
+#[derive(Parser, Debug)]
+struct Cli {
+    #[clap(long, default_value_t = DEFAULT_QUEUE_NUM)]
+    pub queue_num: u16,
+
+    #[clap(long)]
+    pub message: Option<String>,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
-    let matches = clap_app!(ping_fuckuper =>
-        (@arg queue_num: --queue-num +takes_value)
-        (@arg message: --message +takes_value)
-    )
-    .get_matches();
+    let cli = Cli::parse();
 
-    let queue_num = match matches.value_of("queue_num") {
-        Some(val) => u16::from_str(val)?,
-        None => DEFAULT_QUEUE_NUM,
-    };
-    let message = matches.value_of("message");
-
-    let mut latency_calculator: Box<dyn LatencyCalculator> = match message {
+    let mut latency_calculator: Box<dyn LatencyCalculator> = match cli.message {
         None => Box::new(ConstantLatencyCalculator::new(133713371337)),
-        Some(message) => Box::new(PseudoBannerLatencyCalculator::new(message)?),
+        Some(message) => Box::new(PseudoBannerLatencyCalculator::new(&message)?),
     };
 
     let mut queue = nfq::Queue::open()?;
-    queue.bind(queue_num)?;
-    log::info!("bound to queue {}, entering main loop", queue_num);
+    queue.bind(cli.queue_num)?;
+    log::info!("bound to queue {}, entering main loop", cli.queue_num);
     loop {
         let mut msg = queue.recv()?;
         msg.set_verdict(nfq::Verdict::Accept);
@@ -129,6 +125,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         queue.verdict(msg)?;
     }
-
-    Ok(())
 }

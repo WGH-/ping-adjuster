@@ -84,29 +84,29 @@ pub enum FuckupError {
     NotATimeval,
 }
 
-pub trait LatencyCalculator {
-    fn latency_delta(&mut self, seq: u16) -> i64;
+pub trait TimevalAdder {
+    fn get_increment(&mut self, seq: u16) -> i64;
 }
 
-pub struct ConstantLatencyCalculator(i64);
+pub struct ConstantTimevalAdder(i64);
 
-impl ConstantLatencyCalculator {
+impl ConstantTimevalAdder {
     pub fn new(x: i64) -> Self {
         Self(x)
     }
 }
 
-impl LatencyCalculator for ConstantLatencyCalculator {
-    fn latency_delta(&mut self, _seq: u16) -> i64 {
+impl TimevalAdder for ConstantTimevalAdder {
+    fn get_increment(&mut self, _seq: u16) -> i64 {
         self.0
     }
 }
 
-pub struct PseudoBannerLatencyCalculator {
+pub struct BannerTimevalAdder {
     deltas: Vec<i64>,
 }
 
-impl PseudoBannerLatencyCalculator {
+impl BannerTimevalAdder {
     pub fn new(msg: &str) -> Result<Self, letters::UnknownLetter> {
         Ok(Self {
             deltas: letters::get_word(msg)?,
@@ -114,8 +114,8 @@ impl PseudoBannerLatencyCalculator {
     }
 }
 
-impl LatencyCalculator for PseudoBannerLatencyCalculator {
-    fn latency_delta(&mut self, seq: u16) -> i64 {
+impl TimevalAdder for BannerTimevalAdder {
+    fn get_increment(&mut self, seq: u16) -> i64 {
         let i = seq as usize - 1;
         self.deltas[i % self.deltas.len()]
     }
@@ -129,7 +129,7 @@ fn try_fuckup<T, F>(
 ) -> Result<(), FuckupError>
 where
     T: TimevalLike + std::fmt::Debug,
-    F: LatencyCalculator + ?Sized,
+    F: TimevalAdder + ?Sized,
 {
     if b.len() <= std::mem::size_of::<T>() {
         return Err(FuckupError::TooShort);
@@ -143,7 +143,7 @@ where
             tv
         );
         if T::IS_64 {
-            tv.set_sec(tv.get_sec() - f.latency_delta(seq));
+            tv.set_sec(tv.get_sec() - f.get_increment(seq));
         } else {
             tv.set_sec(tv.get_sec() - 1337);
         }
@@ -159,7 +159,7 @@ where
 
 pub fn fuckup_icmp_payload_buffer<F>(b: &mut [u8], seq: u16, f: &mut F) -> Result<(), ()>
 where
-    F: LatencyCalculator + ?Sized,
+    F: TimevalAdder + ?Sized,
 {
     log::trace!(" icmp payload: {:?}", U8DebugWrapper(b));
 

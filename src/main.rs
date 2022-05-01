@@ -10,13 +10,13 @@ use pnet::packet::MutablePacket;
 use clap::Parser;
 
 use ping_fuckuper::{
-    fuckup_icmp_payload_buffer, ConstantLatencyCalculator, LatencyCalculator,
-    PseudoBannerLatencyCalculator,
+    fuckup_icmp_payload_buffer, ConstantTimevalAdder, TimevalAdder,
+    BannerTimevalAdder,
 };
 
 const DEFAULT_QUEUE_NUM: u16 = 5256;
 
-fn handle_ipv4<T: LatencyCalculator + ?Sized>(
+fn handle_ipv4<T: TimevalAdder + ?Sized>(
     ipv4: &mut MutableIpv4Packet,
     f: &mut T,
 ) -> Result<(), ()> {
@@ -50,7 +50,7 @@ fn handle_ipv4<T: LatencyCalculator + ?Sized>(
     }
 }
 
-fn handle_ipv6<T: LatencyCalculator + ?Sized>(
+fn handle_ipv6<T: TimevalAdder + ?Sized>(
     ipv6: &mut MutableIpv6Packet,
     f: &mut T,
 ) -> Result<(), ()> {
@@ -99,9 +99,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
 
-    let mut latency_calculator: Box<dyn LatencyCalculator> = match cli.message {
-        None => Box::new(ConstantLatencyCalculator::new(133713371337)),
-        Some(message) => Box::new(PseudoBannerLatencyCalculator::new(&message)?),
+    let mut latency_calculator: Box<dyn TimevalAdder> = match cli.message {
+        None => Box::new(ConstantTimevalAdder::new(133713371337)),
+        Some(message) => Box::new(BannerTimevalAdder::new(&message)?),
     };
 
     let mut queue = nfq::Queue::open()?;

@@ -79,7 +79,7 @@ enum Endianness {
     Little,
 }
 
-pub enum FuckupError {
+pub enum AdjustError {
     TooShort,
     NotATimeval,
 }
@@ -121,18 +121,18 @@ impl TimevalAdder for BannerTimevalAdder {
     }
 }
 
-fn try_fuckup<T, F>(
+fn try_adjust<T, F>(
     b: &mut [u8],
     endianness: Endianness,
     seq: u16,
     f: &mut F,
-) -> Result<(), FuckupError>
+) -> Result<(), AdjustError>
 where
     T: TimevalLike + std::fmt::Debug,
     F: TimevalAdder + ?Sized,
 {
     if b.len() <= std::mem::size_of::<T>() {
-        return Err(FuckupError::TooShort);
+        return Err(AdjustError::TooShort);
     }
     let mut tv = unsafe { (b.as_ptr() as *const T).read_unaligned() };
     tv.bswap_endianness(endianness);
@@ -153,11 +153,11 @@ where
         }
         return Ok(());
     } else {
-        return Err(FuckupError::NotATimeval);
+        return Err(AdjustError::NotATimeval);
     };
 }
 
-pub fn fuckup_icmp_payload_buffer<F>(b: &mut [u8], seq: u16, f: &mut F) -> Result<(), ()>
+pub fn modify_icmp_payload<F>(b: &mut [u8], seq: u16, f: &mut F) -> Result<(), ()>
 where
     F: TimevalAdder + ?Sized,
 {
@@ -166,17 +166,17 @@ where
     // TODO maybe approx half RTT?
     //let now = nix::time::ClockId::CLOCK_REALTIME.now().expect("clock_gettime isn't supposed to fail");
 
-    if try_fuckup::<Timeval64, _>(b, Endianness::Little, seq, f).is_ok() {
+    if try_adjust::<Timeval64, _>(b, Endianness::Little, seq, f).is_ok() {
         return Ok(());
     }
     // NOTE big endian 64 bit has false positives for 32 bit little endian, breaking it
-    //if try_fuckup::<Timeval64>(b, Endianness::Big).is_ok() {
+    //if try_adjust::<Timeval64>(b, Endianness::Big).is_ok() {
     //    return Ok(())
     //}
-    if try_fuckup::<Timeval32, _>(b, Endianness::Little, seq, f).is_ok() {
+    if try_adjust::<Timeval32, _>(b, Endianness::Little, seq, f).is_ok() {
         return Ok(());
     }
-    if try_fuckup::<Timeval32, _>(b, Endianness::Big, seq, f).is_ok() {
+    if try_adjust::<Timeval32, _>(b, Endianness::Big, seq, f).is_ok() {
         return Ok(());
     }
     log::trace!(" no timestamp found");

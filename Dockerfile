@@ -20,15 +20,15 @@ RUN set -eux; \
     cargo install --version 1.37.0 cargo-deb;
 
 # build crate
-ADD . /usr/src/ping-fuckuper/
+ADD . /usr/src/ping-adjuster/
 # XXX https://github.com/rust-lang/cargo/issues/7124
 RUN set -eux; \
     source $HOME/.cargo/env; \
-    cd /usr/src/ping-fuckuper; \
+    cd /usr/src/ping-adjuster; \
     cargo build --release; \
     cargo deb; \
     mkdir /output; \
-    cp target/debian/ping-fuckuper_*.deb target/release/ping-fuckuper /output; \
+    cp target/debian/*.deb target/release/ping-adjuster /output; \
     cargo clean
 
 FROM scratch

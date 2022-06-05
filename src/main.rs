@@ -9,8 +9,8 @@ use pnet::packet::MutablePacket;
 
 use clap::Parser;
 
-use ping_adjuster::{
-    modify_icmp_payload, ConstantTimevalAdder, TimevalAdder,
+use ping_adjuster::timestamp::{
+    modify_icmp_timestamp, ConstantTimevalAdder, TimevalAdder,
     BannerTimevalAdder,
 };
 
@@ -38,7 +38,7 @@ fn handle_ipv4<T: TimevalAdder + ?Sized>(
     log::trace!("{} -> {:?}", destination, icmp_echo_reply_packet);
     let seq = icmp_echo_reply_packet.get_sequence_number();
     icmp_echo_reply_packet.set_sequence_number(1);
-    match modify_icmp_payload(icmp_echo_reply_packet.payload_mut(), seq, f) {
+    match modify_icmp_timestamp(icmp_echo_reply_packet.payload_mut(), seq, f) {
         Ok(_) => {
             use pnet::packet::icmp::checksum;
             let mut icmp_packet =
@@ -73,7 +73,7 @@ fn handle_ipv6<T: TimevalAdder + ?Sized>(
     log::trace!("{} -> {:?}", destination, icmp_echo_reply_packet);
     let seq = icmp_echo_reply_packet.get_sequence_number();
     icmp_echo_reply_packet.set_sequence_number(1);
-    match modify_icmp_payload(icmp_echo_reply_packet.payload_mut(), seq, f) {
+    match modify_icmp_timestamp(icmp_echo_reply_packet.payload_mut(), seq, f) {
         Ok(_) => {
             use pnet::packet::icmpv6::checksum;
             let mut icmp_packet =

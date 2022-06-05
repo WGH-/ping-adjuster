@@ -1,4 +1,4 @@
-pub mod letters;
+mod letters;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -79,15 +79,31 @@ enum Endianness {
     Little,
 }
 
+/// Returned when it was impossible to modify timestamp value
+/// in the buffer.
 pub enum AdjustError {
+    /// Data was too short, `struct timeval` couldn't possibly
+    /// fit in there.
     TooShort,
+    /// Unable to autodetect `struct timeval` encoding, buffer
+    /// likely doesn't contain a timestamp.
     NotATimeval,
 }
 
+/// An interface for various algorithms that increment
+/// timestamp inside ping packets, confusing RTT calculation.
 pub trait TimevalAdder {
+    /// Calculate timestamp delta based on sequence number.
+    ///
+    /// Sequence number typically starts with 1 in most `ping`
+    /// implementations.
+    ///
+    /// The increment is measured in whole seconds.
     fn get_increment(&mut self, seq: u16) -> i64;
 }
 
+/// Adds a constant value to timestamp, making RTT appear
+/// this amount longer.
 pub struct ConstantTimevalAdder(i64);
 
 impl ConstantTimevalAdder {
@@ -102,11 +118,25 @@ impl TimevalAdder for ConstantTimevalAdder {
     }
 }
 
+/// Adds a delta to timestamp in such way it would
+/// look like a 2D monochrome image.
+///
+/// ```text
+/// time=700000000777041 ms
+/// time=700777770077059 ms (DUP!)
+/// time=700777770077042 ms (DUP!)
+/// time=700000000777039 ms (DUP!)
+/// time=700777770077061 ms (DUP!)
+/// time=700777770077161 ms (DUP!)
+/// time=700000000777042 ms (DUP!)
+/// ```
 pub struct BannerTimevalAdder {
     deltas: Vec<i64>,
 }
 
 impl BannerTimevalAdder {
+    /// Creates a new `BannerTimevalAdder` displaying the specified
+    /// message.
     pub fn new(msg: &str) -> Result<Self, letters::UnknownLetter> {
         Ok(Self {
             deltas: letters::get_word(msg)?,
@@ -145,6 +175,9 @@ where
         if T::IS_64 {
             tv.set_sec(tv.get_sec() - f.get_increment(seq));
         } else {
+            // We can't really do much for 32 bit systems,
+            // since we lack the number of digits. At least
+            // confuse ping to display 1337___ ms latency.
             tv.set_sec(tv.get_sec() - 1337);
         }
         tv.bswap_endianness(endianness);
@@ -157,6 +190,14 @@ where
     };
 }
 
+/// Modify `ping` payload, trying to adjust timestamp value in it.
+///
+/// `f` specifies the algorithm that would modify the timestamp value.
+/// See [`TimevalAdder`] for more details.
+///
+/// This function autodetects the specific encoding of a timestamp: 64-bit vs 32-bit,
+/// big-endian vs little-endian. For 32-bit, `f` is not used, because there's too few
+/// bits to draw something useful. A constant 1337 is added instead.
 pub fn modify_icmp_payload<F>(b: &mut [u8], seq: u16, f: &mut F) -> Result<(), ()>
 where
     F: TimevalAdder + ?Sized,

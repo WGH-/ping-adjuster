@@ -239,6 +239,8 @@ fn get_letter(c: char) -> Result<&'static [i64], UnknownLetter> {
     })
 }
 
+/// Returned when the 2D image for the specified letter
+/// is not implemented.
 #[derive(Debug)]
 pub struct UnknownLetter(char);
 

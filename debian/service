@@ -1,0 +1,18 @@
+[Service]
+ExecStartPre=/usr/sbin/iptables -A OUTPUT --protocol icmp --icmp-type echo-reply -j NFQUEUE --queue-num 5256 --queue-bypass
+ExecStartPre=/usr/sbin/ip6tables -A OUTPUT --protocol icmpv6 --icmpv6-type echo-reply -j NFQUEUE --queue-num 5256 --queue-bypass
+ExecStart=/usr/sbin/ping-adjuster $PING_ADJUSTER_OPTS
+ExecStopPost=/usr/sbin/iptables -D OUTPUT --protocol icmp --icmp-type echo-reply -j NFQUEUE --queue-num 5256 --queue-bypass
+ExecStopPost=/usr/sbin/ip6tables -D OUTPUT --protocol icmpv6 --icmpv6-type echo-reply -j NFQUEUE --queue-num 5256 --queue-bypass
+EnvironmentFile=-/etc/default/ping-adjuster
+DynamicUser=true
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+SystemCallFilter=@system-service
+RestrictNamespaces=true
+
+[Install]
+WantedBy=multi-user.target

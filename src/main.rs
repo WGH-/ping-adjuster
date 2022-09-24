@@ -11,9 +11,12 @@ const DEFAULT_QUEUE_NUM: u16 = 5256;
 
 #[derive(Parser, Debug)]
 struct Cli {
+    /// NFQUEUE queue number
     #[clap(long, default_value_t = DEFAULT_QUEUE_NUM)]
     pub queue_num: u16,
 
+    /// A text that will be drawn using corrupted
+    /// round-trip time measurements.
     #[clap(long)]
     pub message: Option<String>,
 }

@@ -19,6 +19,7 @@ pnet = "0.28.0"
 depends = "$auto, iptables"
 assets = [
     ["target/release/ping-adjuster", "usr/sbin/ping-adjuster", "755"],
+    ["debian/default", "etc/default/ping-adjuster", "644"],
 ]
 maintainer-scripts = "debian/"
 systemd-units = { }
